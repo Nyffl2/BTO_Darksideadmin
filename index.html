@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ရုပ်ရှင်စီမံခန့်ခွဲသူ မျက်နှာပြင်</title>
+    <!-- Tailwind CSS ကို ထည့်သွင်းခြင်း -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase Client ကို ထည့်သွင်းခြင်း -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #10B981; /* Emerald-500 */
+            --secondary: #374151; /* Gray-600 */
+            --bg-dark: #1F2937; /* Gray-800 */
+            --text-light: #F9FAFB;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+        }
+        .app-container {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app" class="app-container p-4 sm:p-8 max-w-6xl mx-auto">
+    <!-- ခေါင်းစီး -->
+    <header class="mb-8 flex justify-between items-center border-b border-gray-700 pb-4">
+        <h1 class="text-4xl font-bold text-emerald-400">စီမံခန့်ခွဲသူ ရုပ်ရှင် ထိန်းချုပ်မှု</h1>
+        <button id="add-movie-btn" onclick="window.navigate('add')" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition duration-200 flex items-center transform hover:scale-105">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            ရုပ်ရှင်အသစ် ထည့်သွင်းရန်
+        </button>
+    </header>
+
+    <!-- အဓိက အကြောင်းအရာနေရာ -->
+    <div id="content-area">
+        <!-- JS ဖြင့် ဖော်ပြပေးမည် -->
+    </div>
+
+    <!-- Custom Alert အတွက် Modal -->
+    <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-gray-700 p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition duration-300">
+            <h3 id="modal-title" class="text-xl font-bold text-emerald-400 mb-4"></h3>
+            <p id="modal-message" class="text-gray-200 mb-6"></p>
+            <div id="modal-actions" class="flex justify-end space-x-4">
+                <button onclick="window.closeModal()" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition">ပိတ်ရန်</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Supabase လျှို့ဝှက်ချက်များ
+    // ကျေးဇူးပြု၍ ဤနေရာတွင် သင်၏ Supabase URL နှင့် Anon Key ကို အစားထိုးပါ
+    const SUPABASE_URL = 'https://gjccanwperewhngnwjol.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdqY2NhbndwZXJld2huZ253am9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4MzU4NzAsImV4cCI6MjA3NzQxMTg3MH0.pYmunnWuYowpqvx1W04iPr0Ut1AtZSI7j9QMIGnjeZM';
+    const TABLE_NAME = 'movies';
+
+    // Supabase စတင်ခြင်း
+    const { createClient } = supabase;
+    let supabaseClient = null;
+
+    let allMovies = [];
+    let state = {
+        currentPage: 'list', // 'list' or 'add'
+        editingMovie: null,
+    };
+
+    const contentArea = document.getElementById('content-area');
+
+    async function initSupabase() {
+        if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+            const errorMessage = "Supabase ကီးများ ထည့်သွင်းရန် လိုအပ်ပါသည်။ ကျေးဇူးပြု၍ SUPABASE_URL နှင့် SUPABASE_ANON_KEY များကို အစားထိုးပါ။";
+            console.error(errorMessage);
+            contentArea.innerHTML = `<p class="text-red-500 p-4 text-center">${errorMessage}</p>`;
+            return;
+        }
+        try {
+            supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            await fetchAllMovies(); // ဒေတာ အားလုံးကို ယူလာခြင်း
+            startDataListener(); // အချိန်နှင့်တပြေးညီ နားထောင်ခြင်း စတင်ခြင်း
+        } catch (error) {
+            console.error("Supabase စတင်ရာတွင် အမှား:", error);
+            contentArea.innerHTML = `<p class="text-red-500 p-4">Supabase စတင်ရာတွင် အမှား: ${error.message}</p>`;
+        }
+    }
+
+    // Supabase မှ ရုပ်ရှင်ဒေတာ အားလုံးကို ယူဆောင်လာခြင်း
+    async function fetchAllMovies() {
+        const { data, error } = await supabaseClient
+            .from(TABLE_NAME)
+            .select('*');
+
+        if (error) {
+            console.error("ရုပ်ရှင်များ ယူဆောင်ရာတွင် အမှား:", error);
+            showModal('ဒေတာ အမှား', `ရုပ်ရှင်များ ယူဆောင်ရာတွင် အမှား: ${error.message}`);
+            return;
+        }
+
+        allMovies = data;
+        // ဖြန့်ချိချိန်အလိုက် စီခြင်း (အသစ်ဆုံးက အပေါ်ဆုံး)
+        allMovies.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        
+        renderApp();
+    }
+
+    // အချိန်နှင့်တပြေးညီ အပြောင်းအလဲများအား နားထောင်ခြင်း
+    function startDataListener() {
+        if (!supabaseClient) return;
+
+        // Admin list ကို အလိုအလျောက် update လုပ်ရန် နားထောင်ခြင်း
+        supabaseClient
+            .channel('admin_movie_changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, (payload) => {
+                console.log('Real-time change received:', payload);
+                // ပြောင်းလဲမှုဖြစ်တိုင်း စာရင်းကို ပြန်တင်ခြင်း
+                fetchAllMovies(); 
+            })
+            .subscribe();
+    }
+
+    // --- Routing နှင့် Rendering ---
+
+    function navigate(page, movie = null) {
+        state.currentPage = page;
+        state.editingMovie = movie;
+        const addButton = document.getElementById('add-movie-btn');
+        if (addButton) {
+            addButton.classList.toggle('hidden', page === 'add' || page === 'edit');
+        }
+        renderApp();
+    }
+
+    function renderApp() {
+        if (!supabaseClient) return; 
+
+        if (state.currentPage === 'list') {
+            renderMovieList();
+        } else if (state.currentPage === 'add' || state.currentPage === 'edit') {
+            renderMovieForm();
+        }
+    }
+
+    function renderMovieList() {
+        const movieList = allMovies.map(movie => `
+            <div class="flex items-center bg-gray-700 rounded-lg shadow-md p-4 mb-3 hover:bg-gray-600 transition">
+                <img
+                    src="${movie.posterUrl}"
+                    alt="${movie.title} ပိုစတာ"
+                    class="w-12 h-16 object-cover rounded-md flex-shrink-0 mr-4"
+                    onerror="this.onerror=null;this.src='https://placehold.co/48x64/374151/F9FAFB?text=N/A'"
+                >
+                <div class="flex-grow">
+                    <h3 class="text-xl font-semibold text-white truncate">${movie.title}</h3>
+                    <p class="text-sm text-gray-400">${movie.category || 'အမျိုးအစား ခွဲခြားမထားပါ'}</p>
+                </div>
+                <div class="flex space-x-2 flex-shrink-0">
+                    <button onclick="window.navigate('edit', ${JSON.stringify(movie).replace(/'/g, "\\'")})" class="bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-1 px-3 rounded-md transition transform hover:scale-105 text-sm">
+                        ပြင်ဆင်ရန်
+                    </button>
+                    <button onclick="window.showDeleteConfirmation('${movie.id}', '${movie.title}')" class="bg-red-500 hover:bg-red-600 text-white font-medium py-1 px-3 rounded-md transition transform hover:scale-105 text-sm">
+                        ဖျက်ရန်
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        const listContent = `
+            <div class="mb-4">
+                <p class="text-gray-400">ရုပ်ရှင် စုစုပေါင်း: <span class="text-emerald-400 font-bold">${allMovies.length}</span></p>
+            </div>
+            ${movieList.length > 0 ? movieList : '<p class="text-center text-gray-400 mt-12">ရုပ်ရှင်များ ထည့်သွင်းထားခြင်း မရှိသေးပါ။ "ရုပ်ရှင်အသစ် ထည့်သွင်းရန်" ကို နှိပ်ပါ။</p>'}
+        `;
+        contentArea.innerHTML = listContent;
+    }
+
+    function renderMovieForm() {
+        const isEditing = state.currentPage === 'edit';
+        const movie = state.editingMovie || {};
+
+        let screenshotUrlsText = '';
+        if (isEditing && movie.screenshotUrls) {
+            try {
+                const urls = JSON.parse(movie.screenshotUrls);
+                screenshotUrlsText = Array.isArray(urls) ? urls.join('\n') : '';
+            } catch (e) {
+                console.error("Screenshot URLs များ parse လုပ်ရာတွင် အမှား:", e);
+            }
+        }
+
+        const formContent = `
+            <div class="max-w-3xl mx-auto bg-gray-700 p-6 sm:p-8 rounded-xl shadow-2xl">
+                <h2 class="text-3xl font-bold mb-6 text-emerald-400">${isEditing ? 'ရုပ်ရှင် ပြင်ဆင်ရန်' : 'ရုပ်ရှင်အသစ် ထည့်သွင်းရန်'}</h2>
+
+                <form id="movie-form" onsubmit="window.handleFormSubmit(event)">
+                    <div class="space-y-4">
+                        <!-- ခေါင်းစဉ် -->
+                        <div>
+                            <label for="title" class="block text-sm font-medium text-gray-200 mb-1">ရုပ်ရှင် ခေါင်းစဉ်</label>
+                            <input type="text" id="title" name="title" value="${movie.title || ''}" required class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">
+                        </div>
+
+                        <!-- ပိုစတာ URL -->
+                        <div>
+                            <label for="posterUrl" class="block text-sm font-medium text-gray-200 mb-1">ပိုစတာ URL</label>
+                            <input type="url" id="posterUrl" name="posterUrl" value="${movie.posterUrl || ''}" required class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">
+                        </div>
+
+                        <!-- အကျဉ်းချုပ် -->
+                        <div>
+                            <label for="description" class="block text-sm font-medium text-gray-200 mb-1">ရုပ်ရှင် အကျဉ်းချုပ်</label>
+                            <textarea id="description" name="description" rows="4" required class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">${movie.description || ''}</textarea>
+                        </div>
+
+                        <!-- ကြာချိန် & အမျိုးအစား -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="duration" class="block text-sm font-medium text-gray-200 mb-1">ကြာချိန် (ဥပမာ: 2 hours 15 minutes)</label>
+                                <input type="text" id="duration" name="duration" value="${movie.duration || ''}" required class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">
+                            </div>
+                            <div>
+                                <label for="category" class="block text-sm font-medium text-gray-200 mb-1">အမျိုးအစား / အမျိုးအစား</label>
+                                <input type="text" id="category" name="category" value="${movie.category || ''}" required class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">
+                            </div>
+                        </div>
+
+                        <!-- ရုပ်ရှင် လင့်ခ် -->
+                        <div>
+                            <label for="movieLink" class="block text-sm font-medium text-gray-200 mb-1">ရုပ်ရှင် လင့်ခ် (တိုက်ရိုက် ကြည့်ရန်/ဒေါင်းလုဒ် URL)</label>
+                            <input type="url" id="movieLink" name="movieLink" value="${movie.movieLink || ''}" required class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">
+                        </div>
+
+                        <!-- Screenshot URLs -->
+                        <div>
+                            <label for="screenshotUrls" class="block text-sm font-medium text-gray-200 mb-1">ရုပ်ရှင်ပုံများ URL များ (လိုင်းတစ်ခုစီတွင် တစ်ခုနှုန်း)</label>
+                            <textarea id="screenshotUrls" name="screenshotUrls" rows="4" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500">${screenshotUrlsText}</textarea>
+                            <p class="text-xs text-gray-400 mt-1">Screenshot link တစ်ခုချင်းစီကို လိုင်းအသစ်တွင် ထည့်ပါ။</p>
+                        </div>
+
+                    </div>
+
+                    <!-- လုပ်ဆောင်ချက်များ -->
+                    <div class="flex justify-end space-x-4 mt-6">
+                        <button type="button" onclick="window.navigate('list')" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition transform hover:scale-105">
+                            ဖျက်သိမ်းရန်
+                        </button>
+                        <button type="submit" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-xl transition duration-200 transform hover:scale-105">
+                            ${isEditing ? 'အပြောင်းအလဲများ သိမ်းဆည်းရန်' : 'ရုပ်ရှင် ထုတ်ဝေရန်'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        `;
+        contentArea.innerHTML = formContent;
+    }
+
+    // --- CRUD လုပ်ဆောင်ချက်များ ---
+
+    async function handleFormSubmit(e) {
+        e.preventDefault();
+        const form = e.target;
+        const isEditing = state.editingMovie !== null;
+        const id = isEditing ? state.editingMovie.id : null;
+
+        // Screenshot URLs များကို array အဖြစ်ပြောင်းပြီး stringify လုပ်ခြင်း
+        const screenshotUrlsInput = form.screenshotUrls.value;
+        const urlsArray = screenshotUrlsInput
+                            .split('\n')
+                            .map(url => url.trim())
+                            .filter(url => url.length > 0);
+        
+        const formData = {
+            title: form.title.value,
+            posterUrl: form.posterUrl.value,
+            description: form.description.value,
+            duration: form.duration.value,
+            category: form.category.value.trim(),
+            movieLink: form.movieLink.value,
+            screenshotUrls: JSON.stringify(urlsArray), // Stringify လုပ်ပြီး သိမ်းဆည်း
+        };
+
+        try {
+            if (!supabaseClient) throw new Error("Supabase Client မရှိပါ။");
+            let response;
+
+            if (isEditing) {
+                // ပြင်ဆင်ခြင်း
+                response = await supabaseClient
+                    .from(TABLE_NAME)
+                    .update(formData)
+                    .eq('id', id);
+                showModal('အောင်မြင်ပါသည်', `${formData.title} ကို အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ!`);
+            } else {
+                // အသစ်ထည့်သွင်းခြင်း
+                response = await supabaseClient
+                    .from(TABLE_NAME)
+                    .insert([formData]);
+                showModal('အောင်မြင်ပါသည်', `${formData.title} ကို အောင်မြင်စွာ ထုတ်ဝေပြီးပါပြီ!`);
+            }
+            
+            if (response.error) throw new Error(response.error.message);
+
+            navigate('list'); // အောင်မြင်ပါက စာရင်းသို့ ပြန်သွားရန်
+
+        } catch (error) {
+            console.error("ရုပ်ရှင် သိမ်းဆည်းရာတွင် အမှား:", error);
+            showModal('အမှား', `ရုပ်ရှင် သိမ်းဆည်းရာတွင် အမှား: ${error.message}`);
+        }
+    }
+
+    async function handleDeleteMovie(id) {
+        try {
+            if (!supabaseClient) throw new Error("Supabase Client မရှိပါ။");
+            
+            const { error } = await supabaseClient
+                .from(TABLE_NAME)
+                .delete()
+                .eq('id', id);
+
+            if (error) throw new Error(error.message);
+
+            showModal('အောင်မြင်ပါသည်', 'ရုပ်ရှင်ကို အောင်မြင်စွာ ဖျက်ပစ်ပြီးပါပြီ။');
+        } catch (error) {
+            console.error("ရုပ်ရှင် ဖျက်ရာတွင် အမှား:", error);
+            showModal('အမှား', `ရုပ်ရှင် ဖျက်ရာတွင် အမှား: ${error.message}`);
+        }
+    }
+
+    // --- Custom Modal/Confirmation လုပ်ဆောင်ချက်များ ---
+
+    function showModal(title, message, isConfirm = false, onConfirm = null) {
+        const modal = document.getElementById('custom-modal');
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-message').textContent = message;
+        const actionsDiv = document.getElementById('modal-actions');
+        actionsDiv.innerHTML = '';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = isConfirm ? 'ဖျက်သိမ်းရန်' : 'ပိတ်ရန်';
+        closeBtn.onclick = window.closeModal;
+        closeBtn.className = 'bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition';
+        actionsDiv.appendChild(closeBtn);
+
+        if (isConfirm && onConfirm) {
+            const confirmBtn = document.createElement('button');
+            confirmBtn.textContent = 'ဖျက်ရန်';
+            confirmBtn.onclick = () => { onConfirm(); window.closeModal(); };
+            confirmBtn.className = 'bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition';
+            actionsDiv.appendChild(confirmBtn);
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('custom-modal').classList.add('hidden');
+    }
+
+    function showDeleteConfirmation(id, title) {
+        showModal(
+            'ဖျက်ရန် အတည်ပြုပါ',
+            `"${title}" အမည်ရှိ ရုပ်ရှင်ကို ဖျက်ပစ်ရန် သေချာပါသလား။ ဤလုပ်ဆောင်ချက်ကို ပြန်ဖျက်၍ မရပါ။`,
+            true,
+            () => handleDeleteMovie(id)
+        );
+    }
+
+
+    // Global scope အတွက် ထုတ်ပေးခြင်း
+    window.navigate = navigate;
+    window.handleFormSubmit = handleFormSubmit;
+    window.showDeleteConfirmation = showDeleteConfirmation;
+    window.closeModal = closeModal;
+
+    // App စတင်ခြင်း
+    initSupabase();
+</script>
+
+</body>
+</html>
+
